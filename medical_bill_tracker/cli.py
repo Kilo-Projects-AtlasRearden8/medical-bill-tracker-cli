@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import date
 
 from .calendar_view import PaymentCalendar
 from .csv_export import export_all
-from .models import parse_date
+from .models import format_date, parse_date
 from .storage import Storage
 from .summary import Summary
 
@@ -107,30 +108,38 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def cmd_add_bill(args, storage: Storage) -> int:
-    b = storage.add_bill(
-        provider=args.provider,
-        amount_due=args.amount,
-        due_date=args.due,
-        status=args.status,
-        category=args.category,
-        notes=args.notes,
-        eob_reference=args.eob_reference,
-    )
+    try:
+        b = storage.add_bill(
+            provider=args.provider,
+            amount_due=args.amount,
+            due_date=args.due,
+            status=args.status,
+            category=args.category,
+            notes=args.notes,
+            eob_reference=args.eob_reference,
+        )
+    except ValueError as exc:
+        print(f"Invalid input: {exc}", file=sys.stderr)
+        return 1
     print(f"Added bill {b.id}: {b.provider} — ${b.amount_due:.2f} due {b.due_date}")
     return 0
 
 
 def cmd_add_eob(args, storage: Storage) -> int:
-    e = storage.add_eob(
-        claim_number=args.claim_number,
-        provider=args.provider,
-        date_of_service=args.date_of_service,
-        billed_amount=args.billed,
-        allowed_amount=args.allowed,
-        insurance_paid=args.insurance_paid,
-        patient_owes=args.patient_owes,
-        received_date=args.received,
-    )
+    try:
+        e = storage.add_eob(
+            claim_number=args.claim_number,
+            provider=args.provider,
+            date_of_service=args.date_of_service,
+            billed_amount=args.billed,
+            allowed_amount=args.allowed,
+            insurance_paid=args.insurance_paid,
+            patient_owes=args.patient_owes,
+            received_date=args.received,
+        )
+    except ValueError as exc:
+        print(f"Invalid input: {exc}", file=sys.stderr)
+        return 1
     print(
         f"Added EOB {e.id}: claim {e.claim_number} — patient owes ${e.patient_balance:.2f}"
     )
@@ -155,6 +164,15 @@ def cmd_pay_bill(args, storage: Storage) -> int:
     if b is None:
         print(f"Bill {args.bill_id} not found", file=sys.stderr)
         return 1
+    payment_date = args.date or format_date(date.today())
+    storage.add_payment(
+        amount=args.amount,
+        payee=b.provider,
+        payment_date=payment_date,
+        payment_type="patient",
+        reference_id=b.id,
+        notes=f"Payment toward bill {b.id}",
+    )
     print(
         f"Applied ${args.amount:.2f} to bill {b.id} ({b.provider}); "
         f"balance ${b.balance:.2f}, status {b.status}"
@@ -275,7 +293,8 @@ COMMANDS = {
 def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    storage = Storage(args.data_dir)
+    data_dir = os.path.expanduser(args.data_dir)
+    storage = Storage(data_dir)
     return COMMANDS[args.command](args, storage)
 
 

@@ -8,7 +8,7 @@ import uuid
 from datetime import date
 from pathlib import Path
 
-from .models import EOB, Bill, Payment, TrackerData, format_date
+from .models import EOB, Bill, Payment, TrackerData, format_date, parse_date
 
 DEFAULT_FILENAME = "tracker.json"
 
@@ -43,6 +43,13 @@ class Storage:
     def _new_id() -> str:
         return uuid.uuid4().hex[:12]
 
+    @staticmethod
+    def _require_date(value: str, field_name: str) -> str:
+        if not value:
+            return value
+        parse_date(value)
+        return value
+
     def add_bill(
         self,
         provider: str,
@@ -58,7 +65,7 @@ class Storage:
             id=self._new_id(),
             provider=provider,
             amount_due=round(amount_due, 2),
-            due_date=due_date or "",
+            due_date=self._require_date(due_date or "", "due_date"),
             status=status,
             category=category,
             notes=notes,
@@ -85,12 +92,14 @@ class Storage:
             id=self._new_id(),
             claim_number=claim_number,
             provider=provider,
-            date_of_service=date_of_service,
+            date_of_service=self._require_date(date_of_service, "date_of_service"),
             billed_amount=round(billed_amount, 2),
             allowed_amount=round(allowed_amount, 2),
             insurance_paid=round(insurance_paid, 2),
             patient_owes=round(patient_owes, 2),
-            received_date=received_date or format_date(date.today()),
+            received_date=self._require_date(
+                received_date or format_date(date.today()), "received_date"
+            ),
             notes=notes,
         )
         data.eobs.append(eob)

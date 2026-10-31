@@ -1,9 +1,11 @@
 import tempfile
+from argparse import Namespace
 from datetime import date, timedelta
 
 import pytest
 
 from medical_bill_tracker.calendar_view import PaymentCalendar
+from medical_bill_tracker.cli import cmd_add_bill, cmd_pay_bill
 from medical_bill_tracker.csv_export import export_all
 from medical_bill_tracker.models import (
     EOB,
@@ -206,3 +208,49 @@ def test_csv_export_shapes():
     assert "bills.csv" in files and "eobs.csv" in files and "payments.csv" in files
     assert files["bills.csv"].startswith("id,provider,amount_due")
     assert "$" not in files["bills.csv"]
+
+
+def test_add_bill_rejects_invalid_date(storage):
+    args = Namespace(
+        provider="Clinic",
+        amount=10.0,
+        due="2026-13-45",
+        status="unpaid",
+        category="",
+        notes="",
+        eob_reference="",
+    )
+    assert cmd_add_bill(args, storage) == 1
+    assert len(storage.load().bills) == 0
+
+
+def test_add_bill_accepts_valid_date(storage):
+    args = Namespace(
+        provider="Clinic",
+        amount=10.0,
+        due="2026-12-01",
+        status="unpaid",
+        category="",
+        notes="",
+        eob_reference="",
+    )
+    assert cmd_add_bill(args, storage) == 0
+    assert len(storage.load().bills) == 1
+
+
+def test_pay_bill_records_payment(storage):
+    b = storage.add_bill("Clinic", 100.0, "2026-12-01")
+    args = Namespace(
+        bill_id=b.id,
+        amount=40.0,
+        date="2026-11-01",
+    )
+    assert cmd_pay_bill(args, storage) == 0
+    updated = storage.get_bill(b.id)
+    assert updated.balance == 60.0
+    assert updated.status == "partially_paid"
+    payments = storage.load().payments
+    assert len(payments) == 1
+    assert payments[0].amount == 40.0
+    assert payments[0].reference_id == b.id
+    assert payments[0].date == "2026-11-01"
